@@ -1,25 +1,178 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "Peer Assessment 1"
+author: "Francis A. Méndez Mediavilla"
+date: "December 10, 2014"
+output: html_document
 ---
 
+``` {r loadLibraries, echo=FALSE}
+library(lattice)
+library(Hmisc)
+options(scipen=10)
+```
 
 ## Loading and preprocessing the data
 
+The number of steps taken were collected for the period of October 1, 2012 until November 30, 2012.
 
+```{r readFile}
+dat<-read.csv(file="activity.csv", header=T)
+head(dat)
+tail(dat)
+```
 
 ## What is mean total number of steps taken per day?
 
+Compute the total number of steps taken per day.  The first step is to aggregate steps per day.  `steps` is defined as the number of steps taking in a 5-minute interval.  
 
+``` {r totNumSteps}
+steps.agg<-aggregate(steps~date, 
+                     FUN=sum,
+                     data=dat)
+```
+
+
+```{r histSteps, echo=TRUE}
+histogram(steps.agg$steps,
+          type="density",
+          xlab="Number of Steps",
+          main="Histogram for the Total Number of Steps per Day")
+```
+
+## Calculate and report the mean and median total number of steps taken per day
+
+``` {r MeanMedian}
+steps.mean.agg<-mean(steps.agg$steps)
+steps.median.agg<-median(steps.agg$steps)
+```
+
+The mean total number of steps per day is `r round(steps.mean.agg,0)` and the median number of total steps per day is `r round(steps.median.agg,0)`.
 
 ## What is the average daily activity pattern?
 
+### Imputation of missing values.
 
+```{r MissingVals}
+num.missing<-sum(is.na(dat$steps))
+```
 
-## Imputing missing values
+The total number of missing values in the dataset is `r num.missing`.
 
+### Impute the missing values
+```{r imputation}
+# Compute the mean number of steps by interval
+steps.mean<-aggregate(steps~interval, 
+                     FUN=mean,
+                     data=dat,
+                     simplify=T)
+# Create variable "dat$steps.imp2".  Contains imputed values.
+dat$steps.imp2<-numeric(length(dat$steps))
+for (j in 1:length(steps.mean)){
+        for (i in 1:length(dat$steps)){
+                if(dat$interval[i]==steps.mean$interval[j]){
+                        dat$steps.imp2[i]<-steps.mean$steps[j]
+                }
+        }
+}
+# Replaces NAs with imputed values
+for (i in 1:length(dat$steps)){
+        if(is.na(dat$steps[i])){
+                dat$steps[i]<-dat$steps.imp2[i]
+        }
+}
+# Deletes the variable containing imputed values
+dat$steps.imp2<-NULL
 
+```
+
+## What is the average daily activity pattern?
+
+A time series depicts the behavior of the average daily pattern for the number of steps by 5-minute intervals.
+
+```{r timeSeries}
+# Recompute the means with the imputations in place
+steps.mean<-aggregate(steps~interval, 
+                     FUN=mean,
+                     data=dat,
+                     simplify=T)
+
+plot(steps.mean$interval,
+     steps.mean$steps, 
+     type="l", lwd=2,
+     xlab="5 Minutes Interval", 
+     ylab="Average Daily Steps",
+     main="Average Daily Steps")
+
+```
+
+### Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+```{r max num steps}
+max.interval<-steps.mean[which.max(steps.mean$steps),]$interval
+max.steps<-steps.mean[which.max(steps.mean$steps),]$steps
+```
+
+The maximum number of average daily steps (i.e., `r max.steps`) occurs at interval `r max.interval`.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+```{r flagWeekDays}
+# If the day is a weekday, variable WeekDay is set to TRUE
+dat$WeekDay<-(weekdays(as.POSIXct(strptime(dat$date, "%Y-%m-%d")))!="Sunday" & weekdays(as.POSIXct(strptime(dat$date, "%Y-%m-%d")))!="Saturday")
+
+weekday.steps.mean<-aggregate(steps[dat$WeekDay==TRUE]~interval[dat$WeekDay==TRUE], 
+                     FUN=mean,
+                     data=dat,
+                     simplify=T)
+
+weekend.steps.mean<-aggregate(steps[dat$WeekDay==FALSE]~interval[dat$WeekDay==FALSE], 
+                     FUN=mean,
+                     data=dat,
+                     simplify=T)
+
+mean.steps.weekday<-round(mean(weekday.steps.mean[,2]),2)
+mean.steps.weekend<-round(mean(weekend.steps.mean[,2]),2)
+
+```
+The mean number of average steps for the weekdays is `r mean.steps.weekday` steps.
+
+The mean number of average steps for the weekends is `r mean.steps.weekend` steps.
+
+```{r TSPlots, fig.align='center'}
+d1<-cbind(weekend.steps.mean$steps,weekend.steps.mean$interval)
+d2<-data.frame(d1,WeekDay="weekend")
+d1<-cbind(weekday.steps.mean$steps,weekday.steps.mean$interval)
+d3<-data.frame(d1,WeekDay="weekday")
+dat2<-rbind(d2,d3)
+names(dat2)<-c("MeanSteps","interval", "Day")
+dat2<-dat2[order(as.numeric(dat2$interval)),]
+panel.means <- function(x, y) {
+        panel.xyplot(x, y, type="l")
+        panel.abline(h=mean(y),
+                     col="red")
+        }
+scatter<-xyplot(as.numeric(MeanSteps)~as.integer(interval)|as.factor(Day),
+       data=dat2,
+       ylab="Mean Number Daily Steps",
+       main="Activity Patterns: Weekdays and Weekends",
+       panel=panel.means)
+print(scatter)
+trellis.device(device="png", filename="plot1.png")
+print(scatter)
+dev.off()
+```
+
+The activity pattern shows distintively different patterns of activity for the weekend and the weekdays.  The mean number of steps for weekday (`r mean.steps.weekday`) and weekend (`r mean.steps.weekend`) (the red lines on the "Activity Patterns" plot show the difference in mean activity).
+
+
+
+```{r boxPlots, fig.align='center'}
+bwplot(as.numeric(MeanSteps)~as.factor(Day),
+       data=dat2,
+       ylab="Mean Number Daily Steps",
+       par.settings = list( box.umbrella=list(col= c("orange", "blue")),
+                            box.dot=list(col= c("orange", "blue")),
+                            box.rectangle = list(col= c("orange", "blue"))),
+       main="Activity Patterns: Weekdays and Weekends")
+```
+
